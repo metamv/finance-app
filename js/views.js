@@ -1,10 +1,10 @@
 // Основные экраны: Главная, Операции, Проекты, Настройки.
 import { ref, computed, watch } from 'vue';
-import { CURRENCIES, sym, fmt, fmtRate, convert, parseAmount, today, toISO, monthKey, dayLabel, shortDayLabel, periodRange, fetchMarketRates } from './money.js';
+import { CURRENCIES, sym, fmt, fmtRate, convert, parseAmount, today, toISO, monthKey, dayLabel, shortDayLabel, periodRange, shiftPeriod, shiftMonth, fetchMarketRates } from './money.js';
 import {
   state, ui, openSheet, toast, ask, balanceOf, totalIn, projectStats, sortedTx, breakdown, txValue,
   groupsOf, childrenOf, colorOf, categoryById, accountById, projectById, rootOf, replaceAll, resetAll,
-  pendingRules, advanceRule, ruleTitle, ruleIcon,
+  pendingRules, advanceRule, ruleTitle, ruleIcon, moveCategory,
 } from './store.js';
 import { Seg, MonthSwitcher, PeriodPicker, CategoryBar, TxRow } from './ui.js';
 import { signOut, syncNow } from './cloud.js';
@@ -49,16 +49,49 @@ export const Overview = {
     let pressTimer = null;
     let longPressed = false;
     const openMenu = (g) => openSheet('catmenu', { group: g, type: ui.homeType, month: ui.homeMonth });
-    function tileDown(t) {
+    let downX = 0, downY = 0;
+    function tileDown(e, t) {
+      if (editing.value) return dragStart(e, t);
+      downX = e.clientX; downY = e.clientY;
       longPressed = false;
       clearTimeout(pressTimer);
       pressTimer = setTimeout(() => { longPressed = true; openMenu(t.g); }, 500);
     }
     const tileCancel = () => clearTimeout(pressTimer);
     function tileClick(t) {
+      if (editing.value) return;
       if (longPressed) { longPressed = false; return; }
       addInCategory(t.g);
     }
+
+    // Режим «Изменить порядок»: плитки перетаскиваются пальцем или мышью.
+    const editing = ref(false);
+    const dragId = ref(null);
+    function dragStart(e, t) {
+      if (t.g.id === 'none') return;
+      dragId.value = t.g.id;
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+    }
+    function dragMove(e) {
+      // Палец поехал (свайп или прокрутка) — это не долгое нажатие.
+      if (!dragId.value) {
+        if (Math.hypot(e.clientX - downX, e.clientY - downY) > 10) tileCancel();
+        return;
+      }
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.tile');
+      const overId = over?.dataset.id;
+      if (overId && overId !== dragId.value && overId !== 'none') moveCategory(dragId.value, overId);
+    }
+    const dragEnd = () => (dragId.value = null);
+    function toggleEditing() {
+      editing.value = !editing.value;
+      dragId.value = null;
+      if (!editing.value) toast('Порядок сохранён');
+    }
+    const swipeMonth = (dir) => {
+      if (editing.value) return false;
+      ui.homeMonth = shiftMonth(ui.homeMonth, dir);
+    };
     // Регулярные: ждут подтверждения и ближайшие 7 дней.
     const pending = computed(() => pendingRules());
     const upcoming = computed(() => {
@@ -73,16 +106,17 @@ export const Overview = {
 
     function tileMenu(t) {
       tileCancel();
-      if (!ui.sheet) { longPressed = true; openMenu(t.g); }
+      if (!ui.sheet && !editing.value) { longPressed = true; openMenu(t.g); }
     }
     return {
       s, ui, disp, total, expense, income, current, tiles, accounts, conv,
       fmt, sym, balanceOf, openSheet, openReport, cycleDisplay, setDisplay, tileDown, tileCancel, tileClick, tileMenu,
+      editing, dragId, dragMove, dragEnd, toggleEditing, swipeMonth,
       pending, upcoming, ruleAmount, ruleCls, confirmRule, skipRule, ruleTitle, ruleIcon, shortDayLabel,
     };
   },
   template: `
-    <section class="page">
+    <section class="page" v-swipe="swipeMonth">
       <header class="hero">
         <div class="hero-label">Баланс</div>
         <button class="hero-total" @click="cycleDisplay" title="Нажмите, чтобы сменить валюту">{{ fmt(total, disp) }}</button>
@@ -126,16 +160,22 @@ export const Overview = {
         <CategoryBar :data="current" :cur="disp" />
       </div>
 
-      <div class="tiles">
-        <button v-for="t in tiles" :key="t.g.id" class="tile" @click="tileClick(t)" @contextmenu.prevent="tileMenu(t)"
-          @pointerdown="tileDown(t)" @pointerup="tileCancel" @pointerleave="tileCancel" @pointercancel="tileCancel">
+      <div class="tiles-head">
+        <span class="muted">{{ editing ? 'Перетащите плитки в нужном порядке' : 'Категории' }}</span>
+        <button :class="['link', { done: editing }]" @click="toggleEditing">{{ editing ? 'Готово' : 'Изменить порядок' }}</button>
+      </div>
+      <transition-group tag="div" name="tile-move" :class="['tiles', { editing, 'no-swipe': editing }]">
+        <button v-for="t in tiles" :key="t.g.id" :data-id="t.g.id" :class="['tile', { dragging: dragId === t.g.id }]"
+          @click="tileClick(t)" @contextmenu.prevent="tileMenu(t)"
+          @pointerdown="tileDown($event, t)" @pointermove="dragMove" @pointerup="tileCancel(); dragEnd()"
+          @pointerleave="tileCancel" @pointercancel="tileCancel(); dragEnd()">
           <span class="tile-ico" :style="{ background: t.color + '2e', boxShadow: 'inset 0 0 0 1.5px ' + t.color }">{{ t.g.icon }}</span>
           <span class="tile-name">{{ t.g.name }}</span>
           <span :class="['tile-sum', { zero: !t.sum }]">{{ fmt(t.sum, disp) }}</span>
         </button>
-      </div>
+      </transition-group>
 
-      <p class="hint center">Нажмите на категорию, чтобы добавить операцию. Удерживайте — чтобы открыть её историю.</p>
+      <p v-if="!editing" class="hint center">Нажмите на категорию, чтобы добавить операцию. Удерживайте — чтобы открыть её историю. Свайп влево/вправо — другой месяц.</p>
 
       <div class="section-head"><h3>Счета</h3><button class="link" @click="openSheet('account')">+ Счёт</button></div>
       <div class="list">
@@ -224,15 +264,19 @@ export const History = {
     const filteredTotal = computed(() => filtered.value.reduce(
       (sum, t) => (t.type === 'transfer' ? sum : sum + (t.type === 'income' ? 1 : -1) * txValue(t, disp.value)), 0));
     function resetFilters() { ui.histQuery = ''; ui.histCategory = null; ui.histAccount = null; }
+    const swipePeriod = (dir) => {
+      if (!['week', 'month', 'year'].includes(ui.period.kind)) return false;
+      ui.period = shiftPeriod(ui.period, dir);
+    };
     const toggleCat = (id) => (ui.histCategory = ui.histCategory === id ? null : id);
 
     return {
       ui, disp, types, catChips, accounts, summary, selGroup, pct, days, shownDays, showMore, filtered, isFiltered, filteredTotal,
-      resetFilters, toggleCat, fmt, dayLabel,
+      resetFilters, toggleCat, fmt, dayLabel, swipePeriod,
     };
   },
   template: `
-    <section class="page">
+    <section class="page" v-swipe="swipePeriod">
       <h1 class="page-title">Операции</h1>
       <PeriodPicker v-model="ui.period" />
 

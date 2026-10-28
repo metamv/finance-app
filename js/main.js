@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import { initCloud } from './cloud.js';
 import { Login } from './login.js';
+import { swipe } from './ui.js';
 import { ui, openSheet, closeSheet, runRecurring, toast, answerAsk } from './store.js';
 import { Overview, History, Projects, Settings } from './views.js';
 import { TxSheet, AccountSheet, ProjectSheet, CategorySheet, CatMenuSheet, RecurringSheet, RecurringListSheet } from './sheets.js';
@@ -67,7 +68,7 @@ const App = {
     </div>`,
 };
 
-createApp(App).mount('#app');
+createApp(App).directive('swipe', swipe).mount('#app');
 
 // Регулярные операции: записываем наступившие при запуске и когда приложение снова открыли.
 function catchUp() {

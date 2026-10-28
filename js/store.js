@@ -289,3 +289,13 @@ export function remove(listName, id) {
   state.deleted.push(id);
   if (state.deleted.length > 3000) state.deleted.splice(0, state.deleted.length - 3000);
 }
+
+// Переставить категорию на место другой (порядок плиток и списков категорий).
+export function moveCategory(id, targetId) {
+  const list = state.categories;
+  const from = list.findIndex((c) => c.id === id);
+  const to = list.findIndex((c) => c.id === targetId);
+  if (from < 0 || to < 0 || from === to) return;
+  const [item] = list.splice(from, 1);
+  list.splice(to, 0, item);
+}

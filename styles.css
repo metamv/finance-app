@@ -474,3 +474,18 @@ input, select { font-size: 16px; }
   display: flex; justify-content: space-between; align-items: center; width: 100%;
   padding: 10px 4px 2px; color: var(--muted); font-size: 14px; font-weight: 600;
 }
+
+/* ---------- свайп между периодами ---------- */
+.swipe-next { animation: swipe-next .25s ease; }
+.swipe-prev { animation: swipe-prev .25s ease; }
+@keyframes swipe-next { from { transform: translateX(28px); opacity: .35; } }
+@keyframes swipe-prev { from { transform: translateX(-28px); opacity: .35; } }
+
+/* ---------- порядок плиток ---------- */
+.tiles-head { display: flex; align-items: center; justify-content: space-between; font-size: 13px; padding: 0 2px; }
+.tiles-head .link.done { background: var(--accent); color: #0d0e12; padding: 6px 14px; border-radius: 999px; }
+.tiles.editing .tile { touch-action: none; cursor: grab; background: var(--surface); animation: jiggle .3s ease-in-out infinite alternate; }
+.tiles.editing .tile:nth-child(2n) { animation-delay: -.15s; }
+.tiles.editing .tile.dragging { animation: none; transform: scale(1.08); background: var(--surface-2); box-shadow: 0 8px 20px rgba(0, 0, 0, .4); z-index: 2; cursor: grabbing; }
+@keyframes jiggle { from { transform: rotate(-1.2deg); } to { transform: rotate(1.2deg); } }
+.tile-move-move { transition: transform .2s ease; }

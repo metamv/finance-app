@@ -48,6 +48,39 @@ export const MonthSwitcher = {
     </div>`,
 };
 
+// Свайп влево/вправо пальцем: v-swipe="(dir) => …", dir = +1 (вперёд) или −1 (назад).
+// Не срабатывает на прокручиваемых строках-фишках, полях ввода и в зонах с классом no-swipe.
+export const swipe = {
+  mounted(el, binding) {
+    let x0 = 0, y0 = 0, t0 = 0, active = false;
+    el._swipeStart = (e) => {
+      const p = e.touches[0];
+      active = e.touches.length === 1 && !e.target.closest('.chips, input, select, textarea, .no-swipe');
+      x0 = p.clientX; y0 = p.clientY; t0 = Date.now();
+    };
+    el._swipeEnd = (e) => {
+      if (!active) return;
+      active = false;
+      const p = e.changedTouches[0];
+      const dx = p.clientX - x0, dy = p.clientY - y0;
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - t0 > 800) return;
+      const dir = dx < 0 ? 1 : -1;
+      if ((el._swipeBinding ?? binding).value(dir) === false) return;
+      // Короткая анимация «въезда» нового периода.
+      el.classList.remove('swipe-next', 'swipe-prev');
+      void el.offsetWidth;
+      el.classList.add(dir > 0 ? 'swipe-next' : 'swipe-prev');
+    };
+    el.addEventListener('touchstart', el._swipeStart, { passive: true });
+    el.addEventListener('touchend', el._swipeEnd, { passive: true });
+  },
+  updated(el, binding) { el._swipeBinding = binding; },
+  unmounted(el) {
+    el.removeEventListener('touchstart', el._swipeStart);
+    el.removeEventListener('touchend', el._swipeEnd);
+  },
+};
+
 // Выбор периода: неделя / месяц / год (с листанием), всё время или свои даты.
 const PERIOD_KINDS = [
   { value: 'week', label: 'Неделя' },
