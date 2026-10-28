@@ -316,7 +316,22 @@ export const Projects = {
     const currentStats = computed(() => current.value && projectStats(current.value));
     const currentTx = computed(() => current.value ? sortedTx(state.transactions.filter((t) => t.projectId === current.value.id)) : []);
     const roi = (st) => st.roi == null || !st.returned ? '' : (st.roi > 0 ? '+' : '') + Math.round(st.roi) + '%';
-    return { ui, disp, list, summary, current, currentStats, currentTx, fmt, roi, openSheet, dayLabel };
+
+    // Поиск по названию и заметке; завершённые — отдельным свёрнутым списком внизу.
+    const query = ref('');
+    const showClosed = ref(false);
+    const found = computed(() => {
+      const q = query.value.trim().toLowerCase();
+      return q ? list.value.filter(({ p }) => `${p.name} ${p.note ?? ''}`.toLowerCase().includes(q)) : list.value;
+    });
+    const activeList = computed(() => found.value.filter(({ p }) => !p.closed));
+    const closedList = computed(() => found.value.filter(({ p }) => p.closed));
+    const closedOpen = computed(() => showClosed.value || !!query.value.trim());
+
+    return {
+      ui, disp, list, summary, current, currentStats, currentTx, fmt, roi, openSheet, dayLabel,
+      query, showClosed, activeList, closedList, closedOpen,
+    };
   },
   template: `
     <section class="page" v-if="current">
@@ -354,19 +369,32 @@ export const Projects = {
           <div><span>Итог</span><b :class="summary.profit >= 0 ? 'pos' : 'neg'">{{ fmt(summary.profit, disp, { sign: true }) }}</b></div>
         </div>
       </div>
-      <button v-for="{ p, st } in list" :key="p.id" :class="['card project', { closed: p.closed }]" @click="ui.projectId = p.id">
-        <div class="card-top">
-          <span class="ico">{{ p.icon }}</span>
-          <b class="grow">{{ p.name }}</b>
-          <span v-if="p.closed" class="badge">Завершён</span>
-          <span v-else-if="roi(st)" :class="['badge', st.profit >= 0 ? 'pos' : 'neg']">{{ roi(st) }}</span>
-        </div>
-        <div class="stats3">
-          <div><span>Вложено</span><b>{{ fmt(st.invested, p.currency) }}</b></div>
-          <div><span>Вернулось</span><b>{{ fmt(st.returned, p.currency) }}</b></div>
-          <div><span>Итог</span><b :class="st.profit >= 0 ? 'pos' : 'neg'">{{ fmt(st.profit, p.currency, { sign: true }) }}</b></div>
-        </div>
-      </button>
+      <label v-if="list.length > 3" class="search">
+        <span class="search-ico">⌕</span>
+        <input v-model="query" type="search" placeholder="Поиск проекта" />
+        <button v-if="query" type="button" class="icon-btn small" @click.prevent="query = ''" aria-label="Очистить">✕</button>
+      </label>
+
+      <template v-for="section in [{ key: 'active', items: activeList }, { key: 'closed', items: closedList }]" :key="section.key">
+        <button v-if="section.key === 'closed' && section.items.length" class="closed-head" @click="showClosed = !showClosed">
+          <span>Завершённые · {{ section.items.length }}</span><span>{{ closedOpen ? '▾' : '▸' }}</span>
+        </button>
+        <template v-if="section.key === 'active' || closedOpen">
+          <button v-for="{ p, st } in section.items" :key="p.id" :class="['card project', { closed: p.closed }]" @click="ui.projectId = p.id">
+            <div class="card-top">
+              <span class="ico">{{ p.icon }}</span>
+              <b class="grow">{{ p.name }}</b>
+              <span v-if="roi(st)" :class="['badge', st.profit >= 0 ? 'pos' : 'neg']">{{ roi(st) }}</span>
+            </div>
+            <div class="stats3">
+              <div><span>Вложено</span><b>{{ fmt(st.invested, p.currency) }}</b></div>
+              <div><span>Вернулось</span><b>{{ fmt(st.returned, p.currency) }}</b></div>
+              <div><span>Итог</span><b :class="st.profit >= 0 ? 'pos' : 'neg'">{{ fmt(st.profit, p.currency, { sign: true }) }}</b></div>
+            </div>
+          </button>
+        </template>
+      </template>
+      <div v-if="list.length && query && !activeList.length && !closedList.length" class="empty">Ничего не найдено</div>
       <div v-if="!list.length" class="empty big-empty">
         <div class="empty-ico">🚗</div>
         Проект — это то, во что вы вкладываете деньги и от чего ждёте отдачи. Например, машина под перепродажу.

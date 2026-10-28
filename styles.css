@@ -468,3 +468,9 @@ input, select { font-size: 16px; }
 .sync-dot.syncing { background: var(--accent); }
 .sync-dot.offline { background: var(--proj); }
 .sync-dot.error { background: var(--neg); }
+
+/* ---------- проекты: завершённые ---------- */
+.closed-head {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  padding: 10px 4px 2px; color: var(--muted); font-size: 14px; font-weight: 600;
+}
