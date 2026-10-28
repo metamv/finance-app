@@ -214,6 +214,12 @@ export const History = {
       }
       return out;
     });
+    // Показываем дни порциями — за «Всё время» могут быть тысячи операций.
+    const PAGE = 40;
+    const limit = ref(PAGE);
+    watch(() => [ui.period, ui.histType, ui.histCategory, ui.histAccount, ui.histQuery], () => (limit.value = PAGE), { deep: true });
+    const shownDays = computed(() => days.value.slice(0, limit.value));
+    const showMore = () => (limit.value += PAGE);
     const isFiltered = computed(() => !!(ui.histQuery.trim() || ui.histCategory || ui.histAccount));
     const filteredTotal = computed(() => filtered.value.reduce(
       (sum, t) => (t.type === 'transfer' ? sum : sum + (t.type === 'income' ? 1 : -1) * txValue(t, disp.value)), 0));
@@ -221,7 +227,7 @@ export const History = {
     const toggleCat = (id) => (ui.histCategory = ui.histCategory === id ? null : id);
 
     return {
-      ui, disp, types, catChips, accounts, summary, selGroup, pct, days, filtered, isFiltered, filteredTotal,
+      ui, disp, types, catChips, accounts, summary, selGroup, pct, days, shownDays, showMore, filtered, isFiltered, filteredTotal,
       resetFilters, toggleCat, fmt, dayLabel,
     };
   },
@@ -278,13 +284,14 @@ export const History = {
         <button class="link" @click="resetFilters">Сбросить фильтры</button>
       </div>
 
-      <div v-for="d in days" :key="d.date" class="day">
+      <div v-for="d in shownDays" :key="d.date" class="day">
         <div class="day-label">
           <span>{{ dayLabel(d.date) }}</span>
           <b v-if="d.hasMoney" :class="d.total > 0 ? 'pos' : d.total < 0 ? 'neg' : ''">{{ fmt(d.total, disp, { sign: true }) }}</b>
         </div>
         <div class="list"><TxRow v-for="t in d.items" :key="t.id" :t="t" /></div>
       </div>
+      <button v-if="shownDays.length < days.length" class="btn" @click="showMore">Показать ещё</button>
       <div v-if="!days.length" class="empty">{{ isFiltered ? 'Ничего не найдено' : 'За этот период операций нет' }}</div>
     </section>`,
 };

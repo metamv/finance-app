@@ -55,7 +55,7 @@ const nf2 = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFr
 
 export function fmt(amount, cur, { sign = false } = {}) {
   const v = Math.abs(amount) < 0.005 ? 0 : amount;
-  const body = (Math.abs(v) >= 10000 ? nf0 : nf2).format(Math.abs(v));
+  const body = (Math.abs(v) >= 1000 ? nf0 : nf2).format(Math.abs(v));
   const s = v < 0 ? '−' : sign && v > 0 ? '+' : '';
   return `${s}${body} ${sym(cur)}`;
 }

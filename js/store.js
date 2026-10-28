@@ -175,7 +175,14 @@ export function totalIn(cur) {
 }
 
 // Сумма операции в нужной валюте — по курсам, действовавшим в момент записи.
-export const txValue = (t, cur) => convert(t.amount, t.currency, cur, t.snap || state.settings.rates);
+export function txValue(t, cur) {
+  const snap = t.snap;
+  // Если в снимке нет нужной валюты — берём текущий курс, пересчитав его к снимку через доллар.
+  if (!snap || !snap[t.currency]) return convert(t.amount, t.currency, cur, state.settings.rates);
+  if (snap[cur]) return convert(t.amount, t.currency, cur, snap);
+  const usd = t.amount / snap[t.currency] * (snap.USD ?? 1);
+  return convert(usd, 'USD', cur, state.settings.rates);
+}
 
 // Разбивка расходов или доходов (включая операции проектов) по группам категорий за период.
 // from/to — даты 'YYYY-MM-DD' или null (без ограничения).

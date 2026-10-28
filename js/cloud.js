@@ -58,7 +58,11 @@ function apply(data) {
 
 // ---- обмен с сервером ----
 
+// Сначала узнаём только время изменения, а сами данные скачиваем, только если они новее наших.
 async function pull() {
+  const head = await supabase.from('user_data').select('updated_at').eq('user_id', meta.userId).maybeSingle();
+  if (head.error) throw head.error;
+  if (!head.data || head.data.updated_at === meta.syncedAt) return head.data;
   const { data, error } = await supabase.from('user_data').select('data, updated_at').eq('user_id', meta.userId).maybeSingle();
   if (error) throw error;
   return data;
