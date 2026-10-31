@@ -507,3 +507,15 @@ input, select { font-size: 16px; }
 .person-new { display: flex; gap: 8px; margin-top: 8px; }
 .person-new input { flex: 1; }
 .person-new .btn { width: auto; flex: none; }
+
+/* ---------- счета под общим балансом ---------- */
+.acc-strip { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: -4px -16px 0; padding: 0 16px 2px; }
+.acc-strip::-webkit-scrollbar { display: none; }
+.acc-card {
+  flex: 1 0 auto; min-width: 130px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border-radius: var(--radius-sm); padding: 10px 12px; text-align: left;
+}
+.acc-card:active { background: var(--surface-2); }
+.acc-name { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.acc-card b { font-size: 17px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.acc-card small { color: var(--muted); font-size: 12px; white-space: nowrap; }

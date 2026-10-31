@@ -41,6 +41,10 @@ export const Overview = {
     function addInCategory(g) {
       openSheet('tx', { preset: { type: ui.homeType, categoryId: g.id === 'none' ? null : g.id } });
     }
+    // Нажатие на счёт — его операции во вкладке «Операции».
+    function openAccountHistory(a) {
+      Object.assign(ui, { histAccount: a.id, histType: 'all', histCategory: null, histQuery: '', tab: 'history' });
+    }
     function openReport() {
       Object.assign(ui, { histType: ui.homeType, histCategory: null, histQuery: '', histAccount: null, period: { kind: 'month', anchor: range.value.from }, tab: 'history' });
     }
@@ -111,7 +115,7 @@ export const Overview = {
     return {
       s, ui, disp, total, expense, income, current, tiles, accounts, conv,
       fmt, sym, balanceOf, openSheet, openReport, cycleDisplay, setDisplay, tileDown, tileCancel, tileClick, tileMenu,
-      editing, dragId, dragMove, dragEnd, toggleEditing, swipeMonth,
+      editing, dragId, dragMove, dragEnd, toggleEditing, swipeMonth, openAccountHistory,
       pending, upcoming, ruleAmount, ruleCls, confirmRule, skipRule, ruleTitle, ruleIcon, shortDayLabel,
     };
   },
@@ -124,6 +128,14 @@ export const Overview = {
           <button v-for="c in s.quickCurrencies" :key="c" :class="{ on: c === disp }" @click="setDisplay(c)">{{ sym(c) }} {{ c }}</button>
         </div>
       </header>
+
+      <div class="acc-strip no-swipe">
+        <button v-for="a in accounts" :key="a.id" class="acc-card" @click="openAccountHistory(a)">
+          <span class="acc-name">{{ a.icon }} {{ a.name }}</span>
+          <b>{{ fmt(balanceOf(a), a.currency) }}</b>
+          <small v-if="a.currency !== disp">≈ {{ fmt(conv(a), disp) }}</small>
+        </button>
+      </div>
 
       <div v-if="pending.length || upcoming.length" class="card rec-card">
         <div class="month-head"><span class="card-title">🔁 Регулярные</span><button class="link" @click="openSheet('recurringList')">Все ›</button></div>
