@@ -36,8 +36,8 @@ function markSynced(updatedAt) {
 }
 const pristine = () => !state.transactions.length && !state.projects.length && !state.recurring.length;
 
-// Объединение двух версий: записи из обеих, при совпадении id побеждает локальная.
-// Удалённые на любом устройстве записи убираются.
+// Объединение двух версий: записи из обеих; если запись есть в обеих — побеждает та,
+// что изменена позже (updatedAt), при равенстве — локальная. Удалённые на любом устройстве убираются.
 const LISTS = ['accounts', 'categories', 'projects', 'transactions', 'recurring', 'people'];
 function merge(local, remote) {
   const deleted = new Set([...(remote.deleted || []), ...(local.deleted || [])]);
@@ -45,7 +45,10 @@ function merge(local, remote) {
   for (const k of LISTS) {
     const byId = new Map();
     for (const x of remote[k] || []) byId.set(x.id, x);
-    for (const x of local[k] || []) byId.set(x.id, x);
+    for (const x of local[k] || []) {
+      const r = byId.get(x.id);
+      if (!r || (x.updatedAt || 0) >= (r.updatedAt || 0)) byId.set(x.id, x);
+    }
     out[k] = [...byId.values()].filter((x) => !deleted.has(x.id));
   }
   return out;

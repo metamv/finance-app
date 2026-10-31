@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch, watchEffect, onMounted, onUnmounted } f
 import { CURRENCIES, sym, fmt, fmtRate, convert, round, parseAmount, today, evalExpr, hasOperator, numToExpr, periodRange,
   addPeriod, shortDayLabel, FREQ_OPTIONS, FREQ_TEXT } from './money.js';
 import {
-  state, ui, uid, upsert, remove, toast, ask, balanceOf, openSheet, breakdown, personStats,
+  state, ui, uid, upsert, remove, touch, toast, ask, balanceOf, openSheet, breakdown, personStats,
   advanceRule, runRecurring, ruleTitle, ruleIcon,
   accountById, categoryById, childrenOf, groupsOf, rootOf, colorOf, PALETTE,
 } from './store.js';
@@ -30,7 +30,8 @@ export const TxSheet = {
     const f = reactive({
       type: src?.type ?? preset.type ?? 'expense',
       date: src?.date ?? preset.date ?? today(),
-      accountId: src?.accountId ?? firstAcc?.id ?? null,
+      // У корректировки долга счёта нет — так и оставляем при редактировании.
+      accountId: src ? (src.accountId ?? null) : (firstAcc?.id ?? null),
       currency: src?.currency ?? preset.currency ?? firstAcc?.currency ?? state.settings.displayCurrency,
       expr: src ? numToExpr(src.amount) : numToExpr(preset.amount ?? 0),
       categoryId: src?.categoryId ?? preset.categoryId ?? null,
@@ -218,7 +219,8 @@ export const TxSheet = {
     // ---- сохранение ----
     function save() {
       if (!(amount.value > 0)) return toast('Введите сумму');
-      if (!acc.value) return toast('Выберите счёт');
+      const isCorrection = !!src && !src.accountId && !f.accountId;
+      if (!acc.value && !isCorrection) return toast('Выберите счёт');
       if (isTransfer.value && (!toAcc.value || toAcc.value.id === acc.value.id)) return toast('Выберите счёт, куда переводите');
 
       const amt = round(amount.value);
@@ -242,7 +244,7 @@ export const TxSheet = {
         id: src?.id ?? uid(),
         type: f.type,
         date: f.date || today(),
-        accountId: acc.value.id,
+        accountId: acc.value?.id ?? null,
         amount: sum,
         currency: isTransfer.value ? accCur.value : f.currency,
         accountAmount: round(sum * rate),
@@ -296,7 +298,7 @@ export const TxSheet = {
         if (fromRule) advanceRule(fromRule);
         toast(src ? 'Сохранено' : 'Операция добавлена');
       }
-      state.settings.lastAccountId = acc.value.id;
+      if (acc.value) state.settings.lastAccountId = acc.value.id;
       emit('close');
     }
 
@@ -348,6 +350,7 @@ export const TxSheet = {
   template: `
     <Sheet :title="src ? 'Операция' : fromRule ? 'Регулярный платёж' : 'Новая операция'" @close="$emit('close')">
       <div v-if="fromRule" class="rule-note">🔁 {{ ruleTitle(fromRule) }} · за {{ shortDayLabel(fromRule.nextDate) }}. Проверьте сумму и нажмите «Записать».</div>
+      <div v-if="src && !src.accountId && !f.accountId" class="rule-note">Корректировка долга — не меняет баланс счетов.</div>
       <Seg v-model="f.type" :options="types" />
 
       <div :class="['amount-box', f.type, { active: active === 'total' }]" @click="active = 'total'">
@@ -561,7 +564,7 @@ export const ProjectSheet = {
       const n = state.transactions.filter((t) => t.projectId === src.id).length;
       const msg = n ? `Удалить проект? ${n} операций останутся в истории, но без привязки к проекту.` : 'Удалить проект?';
       if (!(await ask(msg))) return;
-      for (const t of state.transactions) if (t.projectId === src.id) t.projectId = null;
+      for (const t of state.transactions) if (t.projectId === src.id) { t.projectId = null; touch(t); }
       remove('projects', src.id);
       toast('Проект удалён');
       emit('close', 'deleted');
@@ -617,7 +620,7 @@ export const CategorySheet = {
       const what = hasChildren ? 'группу вместе с подкатегориями' : 'категорию';
       const msg = n ? `Удалить ${what}? ${n} операций останутся, но без категории.` : `Удалить ${what}?`;
       if (!(await ask(msg))) return;
-      for (const t of state.transactions) if (ids.includes(t.categoryId)) t.categoryId = null;
+      for (const t of state.transactions) if (ids.includes(t.categoryId)) { t.categoryId = null; touch(t); }
       ids.forEach((id) => remove('categories', id));
       toast('Удалено');
       emit('close');
@@ -821,13 +824,30 @@ export const PersonSheet = {
   emits: ['close'],
   setup(props, { emit }) {
     const src = props.payload.person ?? null;
+    const current = src ? Math.round(personStats(src).balance * 100) / 100 : 0;
+    const actualStr = ref('');
     const f = reactive({
       name: src?.name ?? '', icon: src?.icon ?? '👤', currency: src?.currency ?? 'RUB', note: src?.note ?? '',
     });
     const allCur = Object.keys(CURRENCIES);
     function save() {
       if (!f.name.trim()) return toast('Введите имя');
-      upsert('people', { id: src?.id ?? uid(), name: f.name.trim(), icon: f.icon, currency: f.currency, note: f.note.trim(), createdAt: src?.createdAt ?? Date.now() });
+      const person = { id: src?.id ?? uid(), name: f.name.trim(), icon: f.icon, currency: f.currency, note: f.note.trim(), createdAt: src?.createdAt ?? Date.now() };
+      upsert('people', person);
+      // Фактический долг отличается от посчитанного — добавляем корректировку без счёта.
+      if (actualStr.value.trim() !== '') {
+        const diff = Math.round((evalExpr(actualStr.value) - current) * 100) / 100;
+        if (Math.abs(diff) >= 0.01) {
+          const group = (type, name) => state.categories.find((c) => c.type === type && !c.parentId && c.name === name)?.id ?? null;
+          upsert('transactions', {
+            id: uid(), type: diff > 0 ? 'expense' : 'income', date: today(), accountId: null,
+            amount: Math.abs(diff), currency: person.currency, accountAmount: Math.abs(diff),
+            toAccountId: null, toAmount: null, projectId: null, personId: person.id, splitId: null, recurringId: null,
+            categoryId: diff > 0 ? group('expense', 'Долги') : group('income', 'Возвраты'),
+            note: 'Корректировка долга', snap: { ...state.settings.rates }, createdAt: Date.now(),
+          });
+        }
+      }
       toast(src ? 'Сохранено' : 'Добавлено');
       emit('close');
     }
@@ -835,12 +855,12 @@ export const PersonSheet = {
       const n = state.transactions.filter((t) => t.personId === src.id).length;
       const msg = n ? `Удалить ${src.name}? ${n} операций останутся в истории, но без привязки к человеку.` : `Удалить ${src.name}?`;
       if (!(await ask(msg))) return;
-      for (const t of state.transactions) if (t.personId === src.id) t.personId = null;
+      for (const t of state.transactions) if (t.personId === src.id) { t.personId = null; touch(t); }
       remove('people', src.id);
       toast('Удалено');
       emit('close', 'deleted');
     }
-    return { src, f, allCur, save, del, sym, CURRENCIES };
+    return { src, f, allCur, save, del, sym, CURRENCIES, current, actualStr, fmt };
   },
   template: `
     <Sheet :title="src ? src.name : 'Новый человек'" @close="$emit('close')">
@@ -853,6 +873,10 @@ export const PersonSheet = {
         </select>
       </label>
       <label class="field"><span>Заметка</span><input v-model="f.note" placeholder="Необязательно" /></label>
+      <label v-if="src" class="field"><span>Сколько должен сейчас (минус — если должны вы)</span>
+        <input v-model="actualStr" inputmode="decimal" :placeholder="'Сейчас по записям: ' + fmt(current, f.currency)" />
+      </label>
+      <p v-if="src" class="hint">Если впишете другую сумму, добавится «Корректировка долга» на разницу — она не меняет баланс счетов.</p>
       <button class="btn primary big" @click="save">Сохранить</button>
       <button v-if="src" class="btn danger-text" @click="del">Удалить</button>
     </Sheet>`,

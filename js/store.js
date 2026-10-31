@@ -192,7 +192,8 @@ export function breakdown(from, to, type, cur) {
   const groups = new Map();
   let total = 0;
   for (const t of state.transactions) {
-    if (t.type !== type) continue;
+    // Без счёта — корректировка долга, это не трата и не доход.
+    if (t.type !== type || !t.accountId) continue;
     if ((from && t.date < from) || (to && t.date > to)) continue;
     const v = txValue(t, cur);
     total += v;
@@ -263,7 +264,7 @@ export function txFromRule(r, date) {
   };
 }
 
-export const advanceRule = (r) => { r.nextDate = addPeriod(r.nextDate, r.freq, r.anchorDay); };
+export const advanceRule = (r) => { r.nextDate = addPeriod(r.nextDate, r.freq, r.anchorDay); touch(r); };
 
 // Записывает все наступившие «автоматические» операции (в том числе пропущенные,
 // пока приложение было закрыто). Возвращает, сколько записано.
@@ -293,7 +294,11 @@ export const sortedTx = (list) =>
 
 // ---- изменения ----
 
+// Отметка времени изменения записи: при синхронизации побеждает более свежая версия.
+export const touch = (item) => { if (item) item.updatedAt = Date.now(); return item; };
+
 export function upsert(listName, item) {
+  touch(item);
   const list = state[listName];
   const i = list.findIndex((x) => x.id === item.id);
   if (i >= 0) list[i] = item;
@@ -347,8 +352,8 @@ function ensureSub(group, name, icon) {
   return c;
 }
 function recategorize(fromIds, toId) {
-  for (const t of state.transactions) if (fromIds.has(t.categoryId)) t.categoryId = toId;
-  for (const r of state.recurring) if (fromIds.has(r.template.categoryId)) r.template.categoryId = toId;
+  for (const t of state.transactions) if (fromIds.has(t.categoryId)) { t.categoryId = toId; touch(t); }
+  for (const r of state.recurring) if (fromIds.has(r.template.categoryId)) { r.template.categoryId = toId; touch(r); }
 }
 
 export function migrate() {
@@ -359,7 +364,7 @@ export function migrate() {
   if (docs) {
     const subs = childrenOf(docs.id);
     const bank = subs.find((c) => c.name === 'Банковские комиссии');
-    if (bank) bank.parentId = ensureGroup('expense', 'Подписки и сервисы', '🔁').id;
+    if (bank) { bank.parentId = ensureGroup('expense', 'Подписки и сервисы', '🔁').id; touch(bank); }
     const docSub = ensureSub(ensureGroup('expense', 'Личное', '💅'), 'Документы', '📄');
     const ids = new Set([docs.id, ...subs.filter((c) => c !== bank).map((c) => c.id)]);
     recategorize(ids, docSub.id);

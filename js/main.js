@@ -28,7 +28,13 @@ const App = {
       if (ui.sheet === 'person' && result === 'deleted') ui.personId = null;
       closeSheet();
     }
-    return { ui, tabs: TABS, sheets: SHEETS, newTx, onClose, answerAsk };
+    // Нажатие на вкладку всегда открывает её главный список (выходит из проекта/человека).
+    function selectTab(id) {
+      ui.tab = id;
+      ui.projectId = null;
+      ui.personId = null;
+    }
+    return { ui, tabs: TABS, sheets: SHEETS, newTx, onClose, answerAsk, selectTab };
   },
   template: `
     <div class="app">
@@ -48,7 +54,7 @@ const App = {
       </button>
 
       <nav class="tabbar">
-        <button v-for="t in tabs" :key="t.id" :class="{ on: ui.tab === t.id }" @click="ui.tab = t.id">
+        <button v-for="t in tabs" :key="t.id" :class="{ on: ui.tab === t.id }" @click="selectTab(t.id)">
           <span class="tab-ico">{{ t.icon }}</span><span>{{ t.label }}</span>
         </button>
       </nav>
