@@ -220,8 +220,10 @@ export function personStats(p) {
     if (t.personId !== p.id) continue;
     count++;
     if (t.date > last) last = t.date;
-    if (t.type === 'expense') given += txValue(t, p.currency);
-    else if (t.type === 'income') received += txValue(t, p.currency);
+    if (t.type === 'transfer') continue;
+    // Расход с минусом (так в 1Money записывались возвраты) — это «получил», и наоборот.
+    const v = txValue(t, p.currency) * (t.type === 'expense' ? 1 : -1);
+    if (v >= 0) given += v; else received -= v;
   }
   return { given, received, balance: given - received, count, last };
 }
