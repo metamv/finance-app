@@ -1,7 +1,7 @@
 // Небольшие переиспользуемые элементы интерфейса.
 import { computed, ref } from 'vue';
 import { fmt, monthLabel, shiftMonth, periodRange, shiftPeriod, today } from './money.js';
-import { accountById, categoryById, projectById, rootOf, openSheet } from './store.js';
+import { accountById, categoryById, projectById, personById, rootOf, openSheet } from './store.js';
 
 // Шторка, выезжающая снизу.
 export const Sheet = {
@@ -185,7 +185,7 @@ export const Keypad = {
 
 // Строка операции в списке.
 export const TxRow = {
-  props: ['t', 'hideProject'],
+  props: ['t', 'hideProject', 'hidePerson'],
   setup(props) {
     const v = computed(() => {
       const t = props.t;
@@ -205,7 +205,9 @@ export const TxRow = {
       const root = rootOf(cat);
       const project = !props.hideProject && t.projectId ? projectById(t.projectId) : null;
       // Вторая строка — только комментарий (и пометки чека/регулярной/проекта): он информативнее счёта и группы.
-      const parts = [t.splitId ? '🧾' : null, t.recurringId ? '🔁' : null, project ? `${project.icon} ${project.name}` : null, t.note || null];
+      const person = !props.hidePerson && t.personId ? personById(t.personId) : null;
+      const parts = [t.splitId ? '🧾' : null, t.recurringId ? '🔁' : null, project ? `${project.icon} ${project.name}` : null,
+        person ? `${person.icon} ${person.name}` : null, t.note || null];
       const sign = t.type === 'income' ? 1 : -1;
       return {
         icon: cat?.icon ?? (t.type === 'income' ? '💰' : '💸'),

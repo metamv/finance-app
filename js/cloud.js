@@ -4,7 +4,7 @@
 // когда связь появится.
 import { watch } from 'vue';
 import { createClient } from '@supabase/supabase-js';
-import { state, ui, replaceAll, resetAll, runRecurring, toast } from './store.js';
+import { state, ui, replaceAll, resetAll, runRecurring, migrate, toast } from './store.js';
 
 // Адрес проекта и публичный ключ — не секретные: данные защищены входом и правилами доступа.
 const SUPABASE_URL = 'https://ubbrssrvwoldvcfcuesb.supabase.co';
@@ -38,7 +38,7 @@ const pristine = () => !state.transactions.length && !state.projects.length && !
 
 // Объединение двух версий: записи из обеих, при совпадении id побеждает локальная.
 // Удалённые на любом устройстве записи убираются.
-const LISTS = ['accounts', 'categories', 'projects', 'transactions', 'recurring'];
+const LISTS = ['accounts', 'categories', 'projects', 'transactions', 'recurring', 'people'];
 function merge(local, remote) {
   const deleted = new Set([...(remote.deleted || []), ...(local.deleted || [])]);
   const out = { ...remote, settings: { ...remote.settings, ...local.settings }, deleted: [...deleted].slice(-3000) };
@@ -53,6 +53,7 @@ function merge(local, remote) {
 
 function apply(data) {
   replaceAll(data);
+  migrate();
   runRecurring();
 }
 

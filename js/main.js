@@ -2,28 +2,30 @@ import { createApp } from 'vue';
 import { initCloud } from './cloud.js';
 import { Login } from './login.js';
 import { swipe } from './ui.js';
-import { ui, openSheet, closeSheet, runRecurring, toast, answerAsk } from './store.js';
-import { Overview, History, Projects, Settings } from './views.js';
-import { TxSheet, AccountSheet, ProjectSheet, CategorySheet, CatMenuSheet, RecurringSheet, RecurringListSheet } from './sheets.js';
+import { ui, openSheet, closeSheet, runRecurring, migrate, toast, answerAsk } from './store.js';
+import { Overview, History, Projects, Debts, Settings } from './views.js';
+import { TxSheet, AccountSheet, ProjectSheet, CategorySheet, CatMenuSheet, RecurringSheet, RecurringListSheet, PersonSheet } from './sheets.js';
 
 const TABS = [
   { id: 'home', label: 'Главная', icon: '◉' },
   { id: 'history', label: 'Операции', icon: '☰' },
   { id: 'projects', label: 'Проекты', icon: '◆' },
+  { id: 'debts', label: 'Долги', icon: '⇄' },
   { id: 'settings', label: 'Настройки', icon: '⚙' },
 ];
 
 const SHEETS = { tx: 'TxSheet', account: 'AccountSheet', project: 'ProjectSheet', category: 'CategorySheet', catmenu: 'CatMenuSheet',
-  recurring: 'RecurringSheet', recurringList: 'RecurringListSheet' };
+  recurring: 'RecurringSheet', recurringList: 'RecurringListSheet', person: 'PersonSheet' };
 
 const App = {
-  components: { Login, Overview, History, Projects, Settings, TxSheet, AccountSheet, ProjectSheet, CategorySheet, CatMenuSheet, RecurringSheet, RecurringListSheet },
+  components: { Login, Overview, History, Projects, Debts, Settings, PersonSheet, TxSheet, AccountSheet, ProjectSheet, CategorySheet, CatMenuSheet, RecurringSheet, RecurringListSheet },
   setup() {
     function newTx() {
       openSheet('tx', ui.tab === 'projects' && ui.projectId ? { preset: { projectId: ui.projectId } } : {});
     }
     function onClose(result) {
       if (ui.sheet === 'project' && result === 'deleted') ui.projectId = null;
+      if (ui.sheet === 'person' && result === 'deleted') ui.personId = null;
       closeSheet();
     }
     return { ui, tabs: TABS, sheets: SHEETS, newTx, onClose, answerAsk };
@@ -37,6 +39,7 @@ const App = {
         <Overview v-if="ui.tab === 'home'" />
         <History v-else-if="ui.tab === 'history'" />
         <Projects v-else-if="ui.tab === 'projects'" />
+        <Debts v-else-if="ui.tab === 'debts'" />
         <Settings v-else-if="ui.tab === 'settings'" />
       </main>
 
@@ -72,6 +75,7 @@ createApp(App).directive('swipe', swipe).mount('#app');
 
 // Регулярные операции: записываем наступившие при запуске и когда приложение снова открыли.
 function catchUp() {
+  migrate();
   const n = runRecurring();
   if (n) toast(`Записано регулярных операций: ${n}`);
 }
@@ -88,6 +92,7 @@ window.addEventListener('popstate', () => {
   if (ui.confirm) answerAsk(false);
   else if (ui.sheet) closeSheet();
   else if (ui.projectId) ui.projectId = null;
+  else if (ui.personId) ui.personId = null;
   else if (ui.tab !== 'home') ui.tab = 'home';
   else if (Date.now() - lastBack < 2000) { history.back(); return; }
   else { lastBack = Date.now(); toast('Нажмите «назад» ещё раз, чтобы выйти'); }

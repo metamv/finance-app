@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch, watchEffect, onMounted, onUnmounted } f
 import { CURRENCIES, sym, fmt, fmtRate, convert, round, parseAmount, today, evalExpr, hasOperator, numToExpr, periodRange,
   addPeriod, shortDayLabel, FREQ_OPTIONS, FREQ_TEXT } from './money.js';
 import {
-  state, ui, uid, upsert, remove, toast, ask, balanceOf, openSheet, breakdown,
+  state, ui, uid, upsert, remove, toast, ask, balanceOf, openSheet, breakdown, personStats,
   advanceRule, runRecurring, ruleTitle, ruleIcon,
   accountById, categoryById, childrenOf, groupsOf, rootOf, colorOf, PALETTE,
 } from './store.js';
@@ -35,6 +35,7 @@ export const TxSheet = {
       expr: src ? numToExpr(src.amount) : numToExpr(preset.amount ?? 0),
       categoryId: src?.categoryId ?? preset.categoryId ?? null,
       projectId: src?.projectId ?? preset.projectId ?? null,
+      personId: src?.personId ?? preset.personId ?? null,
       toAccountId: src?.toAccountId ?? preset.toAccountId ?? null,
       note: src?.note ?? preset.note ?? '',
       rateStr: '',
@@ -249,6 +250,7 @@ export const TxSheet = {
         toAmount,
         categoryId: isTransfer.value ? null : categoryId,
         projectId: isTransfer.value ? null : f.projectId,
+        personId: isTransfer.value ? null : f.personId,
         note: f.note.trim(),
         snap,
         splitId: src?.splitId ?? null,
@@ -309,6 +311,22 @@ export const TxSheet = {
     const projects = computed(() => state.projects.filter((p) => !p.closed || p.id === f.projectId));
     // Выбор проекта нужен только для «проектных» категорий (или если проект уже выбран).
     const PROJECT_GROUPS = ['Вложения в проекты', 'Доход от проектов'];
+    // Человек — для категорий «Долги» и «Возвраты» (или если уже выбран).
+    const DEBT_GROUPS = ['Долги', 'Возвраты'];
+    const people = computed(() => [...state.people].sort((a, b) => a.name.localeCompare(b.name, 'ru')));
+    const showPeople = computed(() => !isTransfer.value && !splitMode.value
+      && (!!f.personId || DEBT_GROUPS.includes(rootOf(categoryById(curCat.value))?.name)));
+    const newPerson = reactive({ open: false, name: '' });
+    function addPerson() {
+      const name = newPerson.name.trim();
+      if (!name) return;
+      const p = { id: uid(), name, icon: '👤', currency: accCur.value === 'THB' ? 'THB' : 'RUB', note: '', createdAt: Date.now() };
+      state.people.push(p);
+      f.personId = p.id;
+      newPerson.open = false;
+      newPerson.name = '';
+    }
+
     const showProjects = computed(() => projects.value.length > 0 && !splitMode.value
       && (!!f.projectId || PROJECT_GROUPS.includes(rootOf(categoryById(curCat.value))?.name)));
     const curOptions = computed(() => {
@@ -324,6 +342,7 @@ export const TxSheet = {
       splitInfo, splitStatus, catLabel, press, primary, primaryLabel, hasOperator,
       save, del, sym, fmt, colorOf, categoryById,
       fromRule, repeat, canRepeat, repeatHint, modeOptions, freqOptions: FREQ_OPTIONS, ruleTitle, shortDayLabel, showProjects,
+      people, showPeople, newPerson, addPerson,
     };
   },
   template: `
@@ -415,6 +434,20 @@ export const TxSheet = {
             <i class="cat-color" :style="{ background: colorOf(g) }"></i>
           </button>
         </div>
+
+        <template v-if="showPeople">
+          <div class="field-label">Кто</div>
+          <div class="chips">
+            <button v-for="p in people" :key="p.id" type="button" :class="['chip', { on: p.id === f.personId }]" @click="f.personId = f.personId === p.id ? null : p.id">
+              {{ p.icon }} {{ p.name }}
+            </button>
+            <button type="button" class="chip" @click="newPerson.open = !newPerson.open">+ Новый</button>
+          </div>
+          <div v-if="newPerson.open" class="person-new">
+            <input v-model="newPerson.name" placeholder="Имя" enterkeyhint="done" @keyup.enter="addPerson" />
+            <button type="button" class="btn" @click="addPerson">Добавить</button>
+          </div>
+        </template>
 
         <template v-if="showProjects">
           <div class="field-label">Проект</div>
@@ -777,5 +810,50 @@ export const RecurringListSheet = {
         Здесь будут подписки, аренда, зарплата и другие повторяющиеся операции.
       </div>
       <button class="btn primary" @click="openSheet('tx', { preset: { repeat: true } })">+ Новая регулярная операция</button>
+    </Sheet>`,
+};
+
+// ================= Человек (для долгов) =================
+
+export const PersonSheet = {
+  components: { Sheet, EmojiPicker },
+  props: ['payload'],
+  emits: ['close'],
+  setup(props, { emit }) {
+    const src = props.payload.person ?? null;
+    const f = reactive({
+      name: src?.name ?? '', icon: src?.icon ?? '👤', currency: src?.currency ?? 'RUB', note: src?.note ?? '',
+    });
+    const allCur = Object.keys(CURRENCIES);
+    function save() {
+      if (!f.name.trim()) return toast('Введите имя');
+      upsert('people', { id: src?.id ?? uid(), name: f.name.trim(), icon: f.icon, currency: f.currency, note: f.note.trim(), createdAt: src?.createdAt ?? Date.now() });
+      toast(src ? 'Сохранено' : 'Добавлено');
+      emit('close');
+    }
+    async function del() {
+      const n = state.transactions.filter((t) => t.personId === src.id).length;
+      const msg = n ? `Удалить ${src.name}? ${n} операций останутся в истории, но без привязки к человеку.` : `Удалить ${src.name}?`;
+      if (!(await ask(msg))) return;
+      for (const t of state.transactions) if (t.personId === src.id) t.personId = null;
+      remove('people', src.id);
+      toast('Удалено');
+      emit('close', 'deleted');
+    }
+    return { src, f, allCur, save, del, sym, CURRENCIES };
+  },
+  template: `
+    <Sheet :title="src ? src.name : 'Новый человек'" @close="$emit('close')">
+      <label class="field"><span>Имя</span><input v-model="f.name" placeholder="Например, Егор" /></label>
+      <div class="field-label">Значок</div>
+      <EmojiPicker v-model="f.icon" />
+      <label class="field"><span>Валюта, в которой считать баланс</span>
+        <select v-model="f.currency">
+          <option v-for="c in allCur" :key="c" :value="c">{{ c }} {{ sym(c) }} — {{ CURRENCIES[c].name }}</option>
+        </select>
+      </label>
+      <label class="field"><span>Заметка</span><input v-model="f.note" placeholder="Необязательно" /></label>
+      <button class="btn primary big" @click="save">Сохранить</button>
+      <button v-if="src" class="btn danger-text" @click="del">Удалить</button>
     </Sheet>`,
 };

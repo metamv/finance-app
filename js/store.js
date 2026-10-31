@@ -18,9 +18,9 @@ const EXPENSE_GROUPS = [
   ['💊', 'Здоровье', [['💊', 'Аптека'], ['🩺', 'Врачи'], ['🏋️', 'Спорт']]],
   ['🛍️', 'Покупки', [['👕', 'Одежда и обувь'], ['📱', 'Техника'], ['🪴', 'Для дома']]],
   ['🎉', 'Отдых', [['🎬', 'Кино и события'], ['🏝️', 'Путешествия'], ['🎮', 'Хобби']]],
-  ['💅', 'Личное', [['💇', 'Красота'], ['🎁', 'Подарки'], ['📚', 'Обучение']]],
-  ['🔁', 'Подписки и сервисы', []],
-  ['🧾', 'Документы и сборы', [['🛂', 'Визы'], ['🏛️', 'Налоги'], ['💳', 'Банковские комиссии']]],
+  ['💅', 'Личное', [['💇', 'Красота'], ['🎁', 'Подарки'], ['📚', 'Обучение'], ['📄', 'Документы']]],
+  ['🔁', 'Подписки и сервисы', [['💳', 'Банковские комиссии']]],
+  ['💸', 'Долги', []],
   ['🚗', 'Вложения в проекты', [['🤝', 'Покупка'], ['🔧', 'Ремонт и запчасти'], ['📄', 'Оформление'], ['🧽', 'Подготовка к продаже']]],
   ['📦', 'Прочее', []],
 ];
@@ -68,6 +68,7 @@ function defaults() {
     projects: [],
     transactions: [],
     recurring: [],
+    people: [], // люди для учёта долгов
     deleted: [], // id удалённых записей — чтобы они не «воскресали» при синхронизации
   };
 }
@@ -107,7 +108,7 @@ export const resetAll = () => assignAll(defaults());
 // ---- состояние интерфейса ----
 
 export const ui = reactive({
-  tab: 'home', sheet: null, payload: null, toast: '', projectId: null, confirm: null,
+  tab: 'home', sheet: null, payload: null, toast: '', projectId: null, personId: null, confirm: null,
   user: null, authChecked: false, sync: 'idle', syncedAt: null,
   period: { kind: 'month', anchor: today() },
   homeType: 'expense',
@@ -144,6 +145,7 @@ export function toast(msg) {
 export const accountById = (id) => state.accounts.find((a) => a.id === id);
 export const categoryById = (id) => state.categories.find((c) => c.id === id);
 export const projectById = (id) => state.projects.find((p) => p.id === id);
+export const personById = (id) => state.people.find((p) => p.id === id);
 export const childrenOf = (id) => state.categories.filter((c) => c.parentId === id);
 export const groupsOf = (type) => state.categories.filter((c) => c.type === type && !c.parentId);
 export const rootOf = (cat) => (cat?.parentId ? categoryById(cat.parentId) : cat);
@@ -208,6 +210,20 @@ export function breakdown(from, to, type, cur) {
   const list = [...groups.values()].sort((a, b) => b.sum - a.sum)
     .map((g) => ({ ...g, subs: [...g.subs.values()].sort((a, b) => b.sum - a.sum) }));
   return { total, list };
+}
+
+// Долги с человеком: расходы (дал, вернул ему) минус доходы (получил от него).
+// Плюс — он должен вам, минус — вы ему.
+export function personStats(p) {
+  let given = 0, received = 0, count = 0, last = '';
+  for (const t of state.transactions) {
+    if (t.personId !== p.id) continue;
+    count++;
+    if (t.date > last) last = t.date;
+    if (t.type === 'expense') given += txValue(t, p.currency);
+    else if (t.type === 'income') received += txValue(t, p.currency);
+  }
+  return { given, received, balance: given - received, count, last };
 }
 
 export function projectStats(p) {
@@ -298,4 +314,53 @@ export function moveCategory(id, targetId) {
   if (from < 0 || to < 0 || from === to) return;
   const [item] = list.splice(from, 1);
   list.splice(to, 0, item);
+}
+
+// Сдвинуть категорию на одно место среди «соседей» (групп одного типа или подкатегорий одной группы).
+export function moveSibling(id, dir) {
+  const cat = categoryById(id);
+  if (!cat) return;
+  const siblings = cat.parentId ? childrenOf(cat.parentId) : groupsOf(cat.type);
+  const i = siblings.indexOf(cat);
+  const other = siblings[i + dir];
+  if (other) moveCategory(id, other.id);
+}
+
+// ---- миграции данных: выполняются один раз, при запуске и после загрузки из облака ----
+
+function ensureGroup(type, name, icon) {
+  let g = state.categories.find((c) => c.type === type && !c.parentId && c.name === name);
+  if (!g) {
+    g = { id: uid(), name, icon, type, parentId: null, color: PALETTE[groupsOf(type).length % PALETTE.length] };
+    state.categories.push(g);
+  }
+  return g;
+}
+function ensureSub(group, name, icon) {
+  let c = state.categories.find((x) => x.parentId === group.id && x.name === name);
+  if (!c) {
+    c = { id: uid(), name, icon, type: group.type, parentId: group.id };
+    state.categories.push(c);
+  }
+  return c;
+}
+function recategorize(fromIds, toId) {
+  for (const t of state.transactions) if (fromIds.has(t.categoryId)) t.categoryId = toId;
+  for (const r of state.recurring) if (fromIds.has(r.template.categoryId)) r.template.categoryId = toId;
+}
+
+export function migrate() {
+  if (!state.people) state.people = [];
+  // «Документы и сборы» расформировываются: банковские комиссии — в «Подписки и сервисы»,
+  // всё остальное — в «Личное · Документы».
+  const docs = state.categories.find((c) => c.type === 'expense' && !c.parentId && c.name === 'Документы и сборы');
+  if (docs) {
+    const subs = childrenOf(docs.id);
+    const bank = subs.find((c) => c.name === 'Банковские комиссии');
+    if (bank) bank.parentId = ensureGroup('expense', 'Подписки и сервисы', '🔁').id;
+    const docSub = ensureSub(ensureGroup('expense', 'Личное', '💅'), 'Документы', '📄');
+    const ids = new Set([docs.id, ...subs.filter((c) => c !== bank).map((c) => c.id)]);
+    recategorize(ids, docSub.id);
+    ids.forEach((id) => remove('categories', id));
+  }
 }

@@ -494,3 +494,16 @@ input, select { font-size: 16px; }
 .note-input { margin-bottom: 8px; background: var(--surface-2); padding: 10px 12px; }
 .date-field { flex-direction: row; align-items: center; gap: 12px; }
 .date-field > span { flex: none; }
+
+/* ---------- порядок категорий в настройках ---------- */
+.tree-line { display: flex; align-items: center; }
+.tree-line .tree-row { flex: 1; min-width: 0; }
+.order-btns { display: flex; gap: 2px; padding-right: 6px; }
+.order-btns .icon-btn:disabled { opacity: .25; }
+.section-head .link.done, .link.done { background: var(--accent); color: #0d0e12; padding: 6px 14px; border-radius: 999px; }
+
+/* ---------- долги ---------- */
+.stats3.two-col { grid-template-columns: 1fr 1fr; }
+.person-new { display: flex; gap: 8px; margin-top: 8px; }
+.person-new input { flex: 1; }
+.person-new .btn { width: auto; flex: none; }

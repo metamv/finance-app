@@ -4,7 +4,7 @@ import { CURRENCIES, sym, fmt, fmtRate, convert, parseAmount, today, toISO, mont
 import {
   state, ui, openSheet, toast, ask, balanceOf, totalIn, projectStats, sortedTx, breakdown, txValue,
   groupsOf, childrenOf, colorOf, categoryById, accountById, projectById, rootOf, replaceAll, resetAll,
-  pendingRules, advanceRule, ruleTitle, ruleIcon, moveCategory,
+  pendingRules, advanceRule, ruleTitle, ruleIcon, moveCategory, moveSibling, personById, personStats,
 } from './store.js';
 import { Seg, MonthSwitcher, PeriodPicker, CategoryBar, TxRow } from './ui.js';
 import { signOut, syncNow } from './cloud.js';
@@ -200,7 +200,7 @@ function searchText(t) {
   const root = rootOf(cat);
   return [
     t.note, cat?.name, root?.name, accountById(t.accountId)?.name, accountById(t.toAccountId)?.name,
-    projectById(t.projectId)?.name, String(t.amount), String(t.amount).replace('.', ','),
+    projectById(t.projectId)?.name, personById(t.personId)?.name, String(t.amount), String(t.amount).replace('.', ','),
   ].filter(Boolean).join(' ').toLowerCase();
 }
 
@@ -447,12 +447,125 @@ export const Projects = {
     </section>`,
 };
 
+// ================= Долги =================
+
+export const Debts = {
+  components: { TxRow },
+  setup() {
+    const disp = computed(() => s.displayCurrency);
+    const list = computed(() => state.people
+      .map((p) => ({ p, st: personStats(p) }))
+      .sort((a, b) => (b.st.last || '').localeCompare(a.st.last || '')));
+    // Рассчитались — баланс почти ноль.
+    const settled = (st) => Math.abs(st.balance) < 1;
+    const summary = computed(() => {
+      let owedToMe = 0, iOwe = 0;
+      for (const { p, st } of list.value) {
+        const v = convert(st.balance, p.currency, disp.value, s.rates);
+        if (v > 0) owedToMe += v; else iOwe -= v;
+      }
+      return { owedToMe, iOwe };
+    });
+
+    const query = ref('');
+    const showSettled = ref(false);
+    const found = computed(() => {
+      const q = query.value.trim().toLowerCase();
+      return q ? list.value.filter(({ p }) => `${p.name} ${p.note ?? ''}`.toLowerCase().includes(q)) : list.value;
+    });
+    const openList = computed(() => found.value.filter(({ st }) => !settled(st)));
+    const settledList = computed(() => found.value.filter(({ st }) => settled(st)));
+    const settledOpen = computed(() => showSettled.value || !!query.value.trim());
+
+    const current = computed(() => personById(ui.personId));
+    const currentStats = computed(() => current.value && personStats(current.value));
+    const currentTx = computed(() => current.value ? sortedTx(state.transactions.filter((t) => t.personId === current.value.id)) : []);
+    const balanceText = (st, cur) => (settled(st) ? 'Рассчитались'
+      : st.balance > 0 ? `Должен вам ${fmt(st.balance, cur)}` : `Вы должны ${fmt(-st.balance, cur)}`);
+
+    // Кнопки на странице человека: «Дал» — расход в «Долги», «Получил» — доход в «Возвраты».
+    const groupId = (type, name) => state.categories.find((c) => c.type === type && !c.parentId && c.name === name)?.id ?? null;
+    const give = () => openSheet('tx', { preset: { type: 'expense', personId: current.value.id, categoryId: groupId('expense', 'Долги') } });
+    const receive = () => openSheet('tx', { preset: { type: 'income', personId: current.value.id, categoryId: groupId('income', 'Возвраты') } });
+
+    return {
+      ui, disp, list, summary, query, showSettled, openList, settledList, settledOpen,
+      current, currentStats, currentTx, balanceText, settled, give, receive, fmt, openSheet,
+    };
+  },
+  template: `
+    <section class="page" v-if="current">
+      <button class="back" @click="ui.personId = null">‹ Все долги</button>
+      <header class="proj-head">
+        <span class="proj-ico">{{ current.icon }}</span>
+        <div class="grow">
+          <h1 class="page-title">{{ current.name }}</h1>
+          <div :class="['sub', currentStats.balance > 0 ? 'pos' : currentStats.balance < 0 ? 'neg' : '']">{{ balanceText(currentStats, current.currency) }}</div>
+        </div>
+        <button class="icon-btn" @click="openSheet('person', { person: current })" aria-label="Изменить">✎</button>
+      </header>
+      <div class="stats3 big">
+        <div><span>Вы дали</span><b>{{ fmt(currentStats.given, current.currency) }}</b></div>
+        <div><span>Вы получили</span><b>{{ fmt(currentStats.received, current.currency) }}</b></div>
+        <div><span>Баланс</span><b :class="currentStats.balance > 0 ? 'pos' : currentStats.balance < 0 ? 'neg' : ''">{{ fmt(currentStats.balance, current.currency, { sign: true }) }}</b></div>
+      </div>
+      <div class="two-btn">
+        <button class="btn neg-btn" @click="give">− Дал / отдал</button>
+        <button class="btn pos-btn" @click="receive">+ Получил</button>
+      </div>
+      <div class="section-head"><h3>Операции</h3></div>
+      <div class="list">
+        <TxRow v-for="t in currentTx" :key="t.id" :t="t" hide-person />
+        <div v-if="!currentTx.length" class="empty">Здесь появятся расчёты с этим человеком</div>
+      </div>
+    </section>
+
+    <section class="page" v-else>
+      <div class="section-head top"><h1 class="page-title">Долги</h1><button class="link" @click="openSheet('person')">+ Человек</button></div>
+      <div v-if="list.length" class="card summary">
+        <div class="stats3 two-col">
+          <div><span>Вам должны</span><b class="pos">{{ fmt(summary.owedToMe, disp) }}</b></div>
+          <div><span>Вы должны</span><b class="neg">{{ fmt(summary.iOwe, disp) }}</b></div>
+        </div>
+      </div>
+      <label v-if="list.length > 3" class="search">
+        <span class="search-ico">⌕</span>
+        <input v-model="query" type="search" placeholder="Поиск по имени" />
+        <button v-if="query" type="button" class="icon-btn small" @click.prevent="query = ''" aria-label="Очистить">✕</button>
+      </label>
+
+      <template v-for="section in [{ key: 'open', items: openList }, { key: 'settled', items: settledList }]" :key="section.key">
+        <button v-if="section.key === 'settled' && section.items.length" class="closed-head" @click="showSettled = !showSettled">
+          <span>Рассчитались · {{ section.items.length }}</span><span>{{ settledOpen ? '▾' : '▸' }}</span>
+        </button>
+        <div v-if="section.items.length && (section.key === 'open' || settledOpen)" class="list">
+          <button v-for="{ p, st } in section.items" :key="p.id" class="row" @click="ui.personId = p.id">
+            <span class="ico">{{ p.icon }}</span>
+            <span class="grow"><span class="title">{{ p.name }}</span><span class="sub">{{ st.count }} опер.{{ p.note ? ' · ' + p.note : '' }}</span></span>
+            <span class="amt">
+              <b :class="st.balance > 0 ? 'pos' : st.balance < 0 ? 'neg' : ''">{{ settled(st) ? '0' : fmt(st.balance, p.currency, { sign: true }) }}</b>
+              <small>{{ settled(st) ? 'рассчитались' : st.balance > 0 ? 'должен вам' : 'вы должны' }}</small>
+            </span>
+          </button>
+        </div>
+      </template>
+      <div v-if="list.length && query && !openList.length && !settledList.length" class="empty">Никого не нашлось</div>
+      <div v-if="!list.length" class="empty big-empty">
+        <div class="empty-ico">🤝</div>
+        Здесь — с кем у вас денежные расчёты: кто вам должен и кому должны вы.
+        Деньги, данные в долг, записывайте в категорию «Долги», возвраты — в «Возвраты» и выбирайте человека.
+        <button class="btn primary" @click="openSheet('person')">Добавить человека</button>
+      </div>
+    </section>`,
+};
+
 // ================= Настройки =================
 
 export const Settings = {
   components: { Seg },
   setup() {
     const catType = ref('expense');
+    const ordering = ref(false);
     const loading = ref(false);
     const addCur = ref('');
     const others = computed(() => s.currencies.filter((c) => c !== s.rateBase));
@@ -543,6 +656,7 @@ export const Settings = {
       ui, syncText, syncNow, logout,
       s, sym, CURRENCIES, catType, catTypes, loading, addCur, others, addable, rateOf, setRate, refresh, addCurrency,
       removeCurrency, toggleQuick, updated, groups, hiddenAccounts, openSheet, exportData, importData, reset, colorOf, state,
+      ordering, moveSibling,
     };
   },
   template: `
@@ -588,13 +702,29 @@ export const Settings = {
       </div>
 
       <div class="card">
-        <div class="section-head flat"><div class="card-title">Категории</div></div>
+        <div class="section-head flat">
+          <div class="card-title">Категории</div>
+          <button :class="['link', { done: ordering }]" @click="ordering = !ordering">{{ ordering ? 'Готово' : 'Изменить порядок' }}</button>
+        </div>
         <Seg v-model="catType" :options="catTypes" />
+        <p v-if="ordering" class="hint">Стрелками меняйте порядок групп и подкатегорий — так они будут стоять на главной и в форме операции.</p>
         <div class="cat-tree">
-          <div v-for="{ g, subs } in groups" :key="g.id" class="tree-group">
-            <button class="tree-row" @click="openSheet('category', { category: g })"><i class="dot" :style="{ background: colorOf(g) }"></i><span>{{ g.icon }}</span><b class="grow">{{ g.name }}</b><span class="muted">✎</span></button>
-            <button v-for="c in subs" :key="c.id" class="tree-row sub" @click="openSheet('category', { category: c })"><span>{{ c.icon }}</span><span class="grow">{{ c.name }}</span></button>
-            <button class="tree-row sub add" @click="openSheet('category', { type: catType, parentId: g.id })">+ подкатегория</button>
+          <div v-for="({ g, subs }, gi) in groups" :key="g.id" class="tree-group">
+            <div class="tree-line">
+              <button class="tree-row" @click="!ordering && openSheet('category', { category: g })"><i class="dot" :style="{ background: colorOf(g) }"></i><span>{{ g.icon }}</span><b class="grow">{{ g.name }}</b><span v-if="!ordering" class="muted">✎</span></button>
+              <span v-if="ordering" class="order-btns">
+                <button class="icon-btn small" :disabled="gi === 0" @click="moveSibling(g.id, -1)" aria-label="Выше">↑</button>
+                <button class="icon-btn small" :disabled="gi === groups.length - 1" @click="moveSibling(g.id, 1)" aria-label="Ниже">↓</button>
+              </span>
+            </div>
+            <div v-for="(c, ci) in subs" :key="c.id" class="tree-line">
+              <button class="tree-row sub" @click="!ordering && openSheet('category', { category: c })"><span>{{ c.icon }}</span><span class="grow">{{ c.name }}</span></button>
+              <span v-if="ordering" class="order-btns">
+                <button class="icon-btn small" :disabled="ci === 0" @click="moveSibling(c.id, -1)" aria-label="Выше">↑</button>
+                <button class="icon-btn small" :disabled="ci === subs.length - 1" @click="moveSibling(c.id, 1)" aria-label="Ниже">↓</button>
+              </span>
+            </div>
+            <button v-if="!ordering" class="tree-row sub add" @click="openSheet('category', { type: catType, parentId: g.id })">+ подкатегория</button>
           </div>
         </div>
         <button class="btn" @click="openSheet('category', { type: catType })">+ Новая группа</button>
