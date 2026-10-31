@@ -489,3 +489,8 @@ input, select { font-size: 16px; }
 .tiles.editing .tile.dragging { animation: none; transform: scale(1.08); background: var(--surface-2); box-shadow: 0 8px 20px rgba(0, 0, 0, .4); z-index: 2; cursor: grabbing; }
 @keyframes jiggle { from { transform: rotate(-1.2deg); } to { transform: rotate(1.2deg); } }
 .tile-move-move { transition: transform .2s ease; }
+
+/* ---------- комментарий над калькулятором ---------- */
+.note-input { margin-bottom: 8px; background: var(--surface-2); padding: 10px 12px; }
+.date-field { flex-direction: row; align-items: center; gap: 12px; }
+.date-field > span { flex: none; }

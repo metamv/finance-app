@@ -307,6 +307,10 @@ export const TxSheet = {
 
     const accs = computed(() => state.accounts.filter((a) => !a.archived || a.id === f.accountId || a.id === f.toAccountId));
     const projects = computed(() => state.projects.filter((p) => !p.closed || p.id === f.projectId));
+    // Выбор проекта нужен только для «проектных» категорий (или если проект уже выбран).
+    const PROJECT_GROUPS = ['Вложения в проекты', 'Доход от проектов'];
+    const showProjects = computed(() => projects.value.length > 0 && !splitMode.value
+      && (!!f.projectId || PROJECT_GROUPS.includes(rootOf(categoryById(curCat.value))?.name)));
     const curOptions = computed(() => {
       const list = [...state.settings.currencies];
       for (const c of [f.currency, accCur.value]) if (c && !list.includes(c)) list.push(c);
@@ -319,7 +323,7 @@ export const TxSheet = {
       splitMode, parts, activePart, active, canSplit, startSplit, stopSplit, addPart, removePart, selectPart,
       splitInfo, splitStatus, catLabel, press, primary, primaryLabel, hasOperator,
       save, del, sym, fmt, colorOf, categoryById,
-      fromRule, repeat, canRepeat, repeatHint, modeOptions, freqOptions: FREQ_OPTIONS, ruleTitle, shortDayLabel,
+      fromRule, repeat, canRepeat, repeatHint, modeOptions, freqOptions: FREQ_OPTIONS, ruleTitle, shortDayLabel, showProjects,
     };
   },
   template: `
@@ -412,7 +416,7 @@ export const TxSheet = {
           </button>
         </div>
 
-        <template v-if="projects.length">
+        <template v-if="showProjects">
           <div class="field-label">Проект</div>
           <div class="chips">
             <button type="button" :class="['chip', { on: !f.projectId }]" @click="f.projectId = null">Без проекта</button>
@@ -423,14 +427,12 @@ export const TxSheet = {
         </template>
       </template>
 
-      <div class="two">
-        <label class="field"><span>Дата</span><input type="date" v-model="f.date" /></label>
-        <label class="field"><span>Комментарий</span><input v-model="f.note" placeholder="Необязательно" /></label>
-      </div>
+      <label class="field date-field"><span>Дата</span><input type="date" v-model="f.date" /></label>
 
       <button v-if="src" class="btn danger-text" @click="del">Удалить операцию</button>
 
       <template #footer>
+        <input class="note-input" v-model="f.note" placeholder="💬 Комментарий" aria-label="Комментарий" enterkeyhint="done" @keyup.enter="$event.target.blur()" />
         <Keypad :primary="primaryLabel" @key="press" @primary="primary" />
       </template>
     </Sheet>`,

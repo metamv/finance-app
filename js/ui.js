@@ -204,7 +204,8 @@ export const TxRow = {
       const cat = categoryById(t.categoryId);
       const root = rootOf(cat);
       const project = !props.hideProject && t.projectId ? projectById(t.projectId) : null;
-      const parts = [t.splitId ? '🧾' : null, t.recurringId ? '🔁' : null, cat && root !== cat ? root.name : null, accName, project ? `${project.icon} ${project.name}` : null, t.note || null];
+      // Вторая строка — только комментарий (и пометки чека/регулярной/проекта): он информативнее счёта и группы.
+      const parts = [t.splitId ? '🧾' : null, t.recurringId ? '🔁' : null, project ? `${project.icon} ${project.name}` : null, t.note || null];
       const sign = t.type === 'income' ? 1 : -1;
       return {
         icon: cat?.icon ?? (t.type === 'income' ? '💰' : '💸'),

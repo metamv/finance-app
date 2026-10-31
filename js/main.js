@@ -77,3 +77,19 @@ function catchUp() {
 }
 initCloud().then(catchUp);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) catchUp(); });
+
+// Кнопка/жест «назад» на телефоне. В истории браузера всегда лежит одна «запасная» запись:
+// «назад» снимает её, мы делаем шаг назад внутри приложения и кладём запись обратно.
+// Выход — только двойным «назад» на главной. (Клавиатуру Android скрывает сам, до нас это не доходит.)
+let lastBack = 0;
+history.replaceState({ finance: 'base' }, '');
+history.pushState({ finance: 'guard' }, '');
+window.addEventListener('popstate', () => {
+  if (ui.confirm) answerAsk(false);
+  else if (ui.sheet) closeSheet();
+  else if (ui.projectId) ui.projectId = null;
+  else if (ui.tab !== 'home') ui.tab = 'home';
+  else if (Date.now() - lastBack < 2000) { history.back(); return; }
+  else { lastBack = Date.now(); toast('Нажмите «назад» ещё раз, чтобы выйти'); }
+  history.pushState({ finance: 'guard' }, '');
+});
